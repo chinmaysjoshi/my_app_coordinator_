@@ -144,10 +144,19 @@ def fp_validate_login(opt=1):
 
 
 def tt_init():
-    work_info_dict['tt_client'] = TelegramClient(StringSession(
-        all_info_dict["telethon_creds_1"]['telethon_session_str']),
+    a_loop = work_info_dict['a_loop']
+    if a_loop.is_closed():
+        work_info_dict['a_loop'] = a_loop = asyncio.new_event_loop()
+    asyncio.set_event_loop(a_loop)
+    # work_info_dict['tt_client'] = TelegramClient(StringSession(
+    #     all_info_dict["telethon_creds_1"]['telethon_session_str']),
+    #     all_info_dict["telethon_creds_1"]['telegram_api_id'],
+    #     all_info_dict["telethon_creds_1"]['telegram_api_hash'],
+    #     loop=a_loop)
+    work_info_dict['tt_client'] = TelegramClient('CJ',
         all_info_dict["telethon_creds_1"]['telegram_api_id'],
-        all_info_dict["telethon_creds_1"]['telegram_api_hash'])
+        all_info_dict["telethon_creds_1"]['telegram_api_hash'],
+        loop=a_loop)
     work_info_dict['tt_client'].start()
 
 
