@@ -2,6 +2,7 @@ import os
 import ast
 import json
 import time
+import asyncio
 import requests
 from urllib import request
 from datetime import datetime
@@ -9,7 +10,10 @@ from dateutil.parser import parse
 import gspread
 import anvil.server
 import pandas as pd
+from curio import Kernel
 from py5paisa import FivePaisaClient
+from telethon.sessions import StringSession
+from telethon.sync import TelegramClient, events
 from flask import Flask, request as flask_request
 from apscheduler.schedulers.background import BackgroundScheduler as bkgSch
 from oauth2client.service_account import ServiceAccountCredentials
@@ -70,6 +74,7 @@ def init():
     # print(all_info_dict)
     anvil.server.connect(all_info_dict['anvil_server_uplink_url'])
     work_info_dict['misc_holiday_check'] = True
+    work_info_dict['a_loop'] = asyncio.new_event_loop()
     sch_02.add_job(gs_init, misfire_grace_time=120)
 
 
@@ -135,6 +140,37 @@ def fp_init():
 @anvil.server.callable
 def fp_validate_login(opt=1):
     return work_info_dict['fp_client_1'].jwt_validate() if opt == 1 else work_info_dict['fp_client_2'].jwt_validate()
+
+
+def tt_init():
+    work_info_dict['tt_client'] = TelegramClient(StringSession(
+        all_info_dict["telethon_creds_1"]['telethon_session_str']),
+        all_info_dict["telethon_creds_1"]['telegram_api_id'],
+        all_info_dict["telethon_creds_1"]['telegram_api_hash'])
+    work_info_dict['tt_client'].start()
+
+
+@anvil.server.callable
+def tt_send_message(entity=1610358948, message='Howdy', reply_to_msg_id=None):
+    async def send_message():
+        nonlocal entity, message, reply_to_msg_id
+        client = work_info_dict['tt_client']
+        a_loop = work_info_dict['a_loop']
+        if a_loop.is_closed():
+            work_info_dict['a_loop'] = a_loop = asyncio.new_event_loop()
+        asyncio.set_event_loop(a_loop)
+        message = "tt_sm5\n" + message
+        reply_to_msg_id = (reply_to_msg_id + 1) if reply_to_msg_id else reply_to_msg_id
+        try:
+            client.send_message(entity, message, reply_to=reply_to_msg_id)
+        except Exception as e1:
+            try:
+                await client.send_message(entity, message + '\nawaited', reply_to=reply_to_msg_id)
+            except Exception as e2:
+                print(e1.with_traceback(None), e2.with_traceback(None))
+
+    with Kernel() as kernel:
+        kernel.run(send_message)
 
 
 @anvil.server.callable
