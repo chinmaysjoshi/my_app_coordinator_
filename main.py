@@ -76,16 +76,16 @@ def gs_init():
 
 def gs_handle_reads():
     # Init
-    debug_docs_range = os.environ['debug_docs_range']
-    scripts_btst_holdings_range = os.environ['scripts_btst_holdings_range']
-    scripts_btst_blacklist_range = os.environ['scripts_btst_blacklist_range']
-    scripts_btst_blacklist_range_2 = os.environ['scripts_btst_blacklist_range_2']
-    pfl_range = os.environ['pfl_range']
-    scripts_info_df_range = os.environ['scripts_info_df_range']
-    stocks_compare_tickers_range = os.environ['stocks_compare_tickers_range']
-    stocks_interested_tickers_range = os.environ['stocks_interested_tickers_range']
-    to_1cr_tickers_range = os.environ['to_1cr_tickers_range']
-    trading_holidays_range = os.environ['trading_holidays_range']
+    debug_docs_range = all_info_dict['debug_docs_range']
+    scripts_btst_holdings_range = all_info_dict['scripts_btst_holdings_range']
+    scripts_btst_blacklist_range = all_info_dict['scripts_btst_blacklist_range']
+    scripts_btst_blacklist_range_2 = all_info_dict['scripts_btst_blacklist_range_2']
+    pfl_range = all_info_dict['pfl_range']
+    scripts_info_df_range = all_info_dict['scripts_info_df_range']
+    stocks_compare_tickers_range = all_info_dict['stocks_compare_tickers_range']
+    stocks_interested_tickers_range = all_info_dict['stocks_interested_tickers_range']
+    to_1cr_tickers_range = all_info_dict['to_1cr_tickers_range']
+    trading_holidays_range = all_info_dict['trading_holidays_range']
 
     # Batch read
     ranges = [scripts_btst_holdings_range, pfl_range, scripts_info_df_range, stocks_compare_tickers_range,
