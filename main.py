@@ -69,8 +69,8 @@ def gs_init():
             all_info_dict['gs_cred_2'], all_info_dict['gs_scope'])})
     gs_dict.update({'gs_auth_cred_1': gspread.authorize(gs_dict['gs_cred_1']),
                     'gs_auth_cred_2': gspread.authorize(gs_dict['gs_cred_2']),
-                    'base_spreadsheet': os.environ['base_spreadsheet'],
-                    'rough_spreadsheet': os.environ['rough_spreadsheet']})
+                    'base_spreadsheet': all_info_dict['base_spreadsheet'],
+                    'rough_spreadsheet': all_info_dict['rough_spreadsheet']})
     sch_03.add_job(gs_handle_reads, 'interval', seconds=60, misfire_grace_time=40)
 
 
@@ -90,7 +90,7 @@ def gs_handle_reads():
     # Batch read
     ranges = [scripts_btst_holdings_range, pfl_range, scripts_info_df_range, stocks_compare_tickers_range,
               stocks_interested_tickers_range, scripts_btst_blacklist_range, debug_docs_range]
-    gs_data = gs_dict['gs_auth_cred_2'].open_by_key(all_info_dict['base_spreadsheet']).values_batch_get(ranges)
+    gs_data = gs_dict['gs_auth_cred_2'].open_by_key(gs_dict['base_spreadsheet']).values_batch_get(ranges)
 
     work_info_dict['dict_flags'] = {x[0]: x[1] for x in gs_data['valueRanges'][-1]['values']}
     sch_02.add_job(fp_init, misfire_grace_time=120)
