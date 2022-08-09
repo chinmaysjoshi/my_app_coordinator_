@@ -90,7 +90,7 @@ def gs_handle_reads():
     # Batch read
     ranges = [scripts_btst_holdings_range, pfl_range, scripts_info_df_range, stocks_compare_tickers_range,
               stocks_interested_tickers_range, scripts_btst_blacklist_range, debug_docs_range]
-    gs_data = gs_dict['gs_auth_cred_2'].open_by_key(gs_dict['base_spreadsheet']).values_batch_get(ranges)
+    gs_data = gs_dict['gs_auth_cred_2'].open_by_key(all_info_dict['base_spreadsheet']).values_batch_get(ranges)
 
     work_info_dict['dict_flags'] = {x[0]: x[1] for x in gs_data['valueRanges'][-1]['values']}
     sch_02.add_job(fp_init, misfire_grace_time=120)
