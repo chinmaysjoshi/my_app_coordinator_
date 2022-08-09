@@ -148,16 +148,17 @@ def tt_init():
     if a_loop.is_closed():
         work_info_dict['a_loop'] = a_loop = asyncio.new_event_loop()
     asyncio.set_event_loop(a_loop)
-    # work_info_dict['tt_client'] = TelegramClient(StringSession(
-    #     all_info_dict["telethon_creds_1"]['telethon_session_str']),
-    #     all_info_dict["telethon_creds_1"]['telegram_api_id'],
-    #     all_info_dict["telethon_creds_1"]['telegram_api_hash'],
-    #     loop=a_loop)
-    work_info_dict['tt_client'] = TelegramClient('CJ',
+    work_info_dict['tt_client'] = TelegramClient(StringSession(
+        all_info_dict["telethon_creds_1"]['telethon_session_str']),
         all_info_dict["telethon_creds_1"]['telegram_api_id'],
         all_info_dict["telethon_creds_1"]['telegram_api_hash'],
         loop=a_loop)
+    # work_info_dict['tt_client'] = TelegramClient('CJ',
+    #     all_info_dict["telethon_creds_1"]['telegram_api_id'],
+    #     all_info_dict["telethon_creds_1"]['telegram_api_hash'],
+    #     loop=a_loop)
     work_info_dict['tt_client'].start()
+    send_to_slack('#imp_info', work_info_dict['tt_client'].get_dialogs())
 
 
 @app.route('/ttsm')
@@ -172,6 +173,7 @@ def tt_send_message(entity=1610358948, message='Howdy', reply_to_msg_id=None):
         asyncio.set_event_loop(a_loop)
         message = "tt_sm5\n" + message
         reply_to_msg_id = (reply_to_msg_id + 1) if reply_to_msg_id else reply_to_msg_id
+        entity = int(entity) if str(entity).isnumeric() else entity
         try:
             client.send_message(entity, message, reply_to=reply_to_msg_id)
         except Exception as e1:
