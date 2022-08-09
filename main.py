@@ -5,6 +5,7 @@ from urllib import request
 from datetime import datetime
 import gspread
 import anvil.server
+from py5paisa import FivePaisaClient
 from flask import Flask, request as flask_request
 from apscheduler.schedulers.background import BackgroundScheduler as bkgSch
 from oauth2client.service_account import ServiceAccountCredentials
@@ -56,15 +57,55 @@ def webhook():
 def init():
     global all_info_dict
     all_info_dict = ast.literal_eval(os.environ['all_info_dict'])
-    print(all_info_dict)
+    # print(all_info_dict)
     anvil.server.connect(all_info_dict['anvil_server_uplink_url'])
+    sch_02.add_job(gs_init, misfire_grace_time=120)
+
+
+def gs_init():
     gs_dict.update({'gs_cred_1': ServiceAccountCredentials.from_json_keyfile_dict(
         all_info_dict['gs_cred_1'], all_info_dict['gs_scope']),
         'gs_cred_2': ServiceAccountCredentials.from_json_keyfile_dict(
             all_info_dict['gs_cred_2'], all_info_dict['gs_scope'])})
     gs_dict.update({'gs_auth_cred_1': gspread.authorize(gs_dict['gs_cred_1']),
-                    'gs_auth_cred_2': gspread.authorize(gs_dict['gs_cred_2'])})
-    print(gs_dict)
+                    'gs_auth_cred_2': gspread.authorize(gs_dict['gs_cred_2']),
+                    'base_spreadsheet': os.environ['base_spreadsheet'],
+                    'rough_spreadsheet': os.environ['rough_spreadsheet']})
+    sch_03.add_job(gs_handle_reads, 'interval', seconds=60, misfire_grace_time=40)
+
+
+def gs_handle_reads():
+    # Init
+    debug_docs_range = 'Debug Doc!B3:C52'
+    scripts_btst_holdings_range = 'Debug Doc!K56'
+    scripts_btst_blacklist_range = 'Trader!Q1300:Q1400'
+    scripts_btst_blacklist_range_2 = 'Trader!Q1301:Q1400'
+    pfl_range = 'Trader!C1201:N1249'
+    scripts_info_df_range = 'Trader!C3:G50'
+    stocks_compare_tickers_range = 'Help Doc!H54:H103'
+    stocks_interested_tickers_range = 'STrig!C3:C260'
+    to_1cr_tickers_range = 'NSE YF SL!C7:C1500'
+    trading_holidays_range = 'NSE Holidays!C3:E200'
+
+    # Batch read
+    ranges = [scripts_btst_holdings_range, pfl_range, scripts_info_df_range, stocks_compare_tickers_range,
+              stocks_interested_tickers_range, scripts_btst_blacklist_range, debug_docs_range]
+    gs_data = gs_dict['gs_auth_cred_2'].open_by_key(gs_dict['base_spreadsheet']).values_batch_get(ranges)
+
+    work_info_dict['dict_flags'] = {x[0]: x[1] for x in gs_data['valueRanges'][-1]['values']}
+
+
+def fp_init():
+    dict_flags = work_info_dict['dict_flags']
+    fp_creds_1 = os.environ['fp_creds_1']
+    fp_creds_2 = os.environ['fp_creds_2']
+    work_info_dict.update({'fp_client_1': FivePaisaClient(
+        fp_creds_1['username'], dict_flags['5p_pass'], fp_creds_1['pin'], fp_creds_1),
+        'fp_client_2': FivePaisaClient(fp_creds_2['username'], dict_flags['5p_pass_2'], fp_creds_2['pin'], fp_creds_2)})
+
+
+def fp_handle_login():
+    ...
 
 
 @anvil.server.callable
