@@ -5,7 +5,7 @@ from urllib import request
 from datetime import datetime
 import gspread
 import anvil.server
-from flask import Flask, request
+from flask import Flask, request as flask_request
 from apscheduler.schedulers.background import BackgroundScheduler as bkgSch
 from oauth2client.service_account import ServiceAccountCredentials
 
@@ -42,8 +42,8 @@ def webhook():
     #         "state":3
     #     },
     # }
-    if request.method == 'POST':
-        req_json = request.json
+    if flask_request.method == 'POST':
+        req_json = flask_request.json
         if 'event' in req_json and 'name' in req_json['event']:
             if req_json['event']['name'][:6] == 'Memory':
                 work_info_dict['Heroku Secret Hamlet Memory Usage'] = req_json['event']['name']
@@ -58,10 +58,10 @@ def init():
     all_info_dict = ast.literal_eval(os.environ['all_info_dict'])
     print(all_info_dict)
     anvil.server.connect(all_info_dict['anvil_server_uplink_url'])
-    gs_dict.update({'gs_cred_1': ServiceAccountCredentials.from_json_keyfile_dict(ast.literal_eval(
-        all_info_dict['gs_cred_1']), ast.literal_eval(all_info_dict['gs_scope'])),
-        'gs_cred_2': ServiceAccountCredentials.from_json_keyfile_dict(ast.literal_eval(
-            all_info_dict['gs_cred_2']), ast.literal_eval(all_info_dict['gs_scope']))})
+    gs_dict.update({'gs_cred_1': ServiceAccountCredentials.from_json_keyfile_dict(
+        all_info_dict['gs_cred_1'], all_info_dict['gs_scope']),
+        'gs_cred_2': ServiceAccountCredentials.from_json_keyfile_dict(
+            all_info_dict['gs_cred_2'], all_info_dict['gs_scope'])})
     gs_dict.update({'gs_auth_cred_1': gspread.authorize(gs_dict['gs_cred_1']),
                     'gs_auth_cred_2': gspread.authorize(gs_dict['gs_cred_2'])})
     print(gs_dict)
