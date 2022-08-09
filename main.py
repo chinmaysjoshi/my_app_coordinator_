@@ -158,7 +158,7 @@ def tt_init():
     #     all_info_dict["telethon_creds_1"]['telegram_api_hash'],
     #     loop=a_loop)
     work_info_dict['tt_client'].start()
-    send_to_slack('#imp_info', str(work_info_dict['tt_client'].get_dialogs()))
+    send_to_slack('#imp_info', work_info_dict['tt_client'].get_dialogs())
 
 
 @app.route('/ttsm')
@@ -192,7 +192,7 @@ def send_to_slack(channel, message, host='REPLIT'):
         print(f'No slack uri hence cannot send message {channel} {message}')
         return 1
     slack_uri = all_info_dict['slack_uri']
-    message = message.replace(' ', ' ')
+    message = str(message).replace(' ', ' ')
     post = {"text": f"{message}", "channel": channel, "username": host,
             "title": "Yo"}
     try:
@@ -239,6 +239,63 @@ def misc_check_holiday():
         send_to_slack('#imp_info', 'Disabling Heroku as It is a holiday')
         sch_02.add_job(gs_handle_write, args=['base_spreadsheet', all_info_dict['heroku_enable_disable_range'], [[1]]],
                        misfire_grace_time=60)
+
+
+@anvil.server.callable
+def misc_python_console(app_data_1=None):
+    # x = self.gs_cred
+    dt_now = datetime.now()
+    run = True
+    while run:
+        try:
+            app_data = input('Please input the command to run : \n') if app_data_1 is None else app_data_1
+            msg_str = ''
+            if app_data == 'exit':
+                run = False
+                continue
+            var = None
+            if app_data.find('=') != -1:
+                indexes = [i for i, v in enumerate(app_data) if v == '=']
+                if_idx = app_data.find('if')
+                split = False if len(indexes) > 1 else True
+                if not split:
+                    for i in range(len(indexes) - 1):
+                        if indexes[i] != indexes[i] + 1 or (indexes[i] > if_idx and i > 0):
+                            split = True
+                            break
+                if split and len(indexes) > 1:
+                    if app_data[indexes[1] - 1] not in [' ', '='] and app_data[indexes[1] + 1] not in [' ', '=']:
+                        split = False
+                if split:
+                    var, app_data = app_data.split('=', 1)
+                    var, app_data = var.strip(), app_data.strip()
+                # print(var, type(var))
+            _locals = locals()
+            do_exec = False
+            try:
+                time_1 = time.time()
+                eval_out = eval(app_data, globals(), _locals)
+                if var is not None:
+                    globals()[var] = eval_out
+                    # print(globals()[var])
+                    app_data = f'{var} = {app_data}'
+                msg_str += f'{eval_out}\npyc_time : {time.time() - time_1:0.5f} secs\n'
+            except:
+                do_exec = True
+            if do_exec:
+                time_1 = time.time()
+                exec_out = exec(app_data, globals(), _locals)
+                if var is str:
+                    globals()[var] = exec_out
+                    app_data = f'{var} = {app_data}'
+                msg_str += f'{exec_out}\npyc_time : {time.time() - time_1:0.5f} secs\n'
+        except Exception as e:
+            msg_str += f'{dt_now} : {e.with_traceback(None)}\n'
+        if app_data_1:
+            return msg_str
+            run = False
+        else:
+            inform(msg_str)
 
 
 sch_01.add_job(init, misfire_grace_time=120)
