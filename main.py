@@ -76,6 +76,7 @@ def init():
     work_info_dict['misc_holiday_check'] = True
     work_info_dict['a_loop'] = asyncio.new_event_loop()
     sch_02.add_job(gs_init, misfire_grace_time=120)
+    sch_02.add_job(tt_init, misfire_grace_time=120)
 
 
 def gs_init():
@@ -150,6 +151,7 @@ def tt_init():
     work_info_dict['tt_client'].start()
 
 
+@app.route('/ttsm')
 @anvil.server.callable
 def tt_send_message(entity=1610358948, message='Howdy', reply_to_msg_id=None):
     async def send_message():
