@@ -1,6 +1,7 @@
 import os
 import ast
 import json
+import time
 from urllib import request
 from datetime import datetime
 import gspread
@@ -72,6 +73,7 @@ def gs_init():
                     'base_spreadsheet': all_info_dict['base_spreadsheet'],
                     'rough_spreadsheet': all_info_dict['rough_spreadsheet']})
     sch_03.add_job(gs_handle_reads, 'interval', seconds=60, misfire_grace_time=40)
+    sch_04.add_job(fp_init, 'interval', seconds=20, misfire_grace_time=120, id='fp_init')
 
 
 def gs_handle_reads():
@@ -93,19 +95,24 @@ def gs_handle_reads():
     gs_data = gs_dict['gs_auth_cred_2'].open_by_key(gs_dict['base_spreadsheet']).values_batch_get(ranges)
 
     work_info_dict['dict_flags'] = {x[0]: x[1] for x in gs_data['valueRanges'][-1]['values']}
-    sch_02.add_job(fp_init, misfire_grace_time=120)
 
 
 def fp_init():
+    if 'dict_flags' not in work_info_dict:
+        return 1
+
     dict_flags = work_info_dict['dict_flags']
-    fp_creds_1 = os.environ['fp_creds_1']
-    fp_creds_2 = os.environ['fp_creds_2']
+    fp_creds_1 = all_info_dict['fp_creds_1']
+    fp_creds_2 = all_info_dict['fp_creds_2']
     work_info_dict.update({'fp_client_1': FivePaisaClient(
         fp_creds_1['username'], dict_flags['5p_pass'], fp_creds_1['pin'], fp_creds_1),
         'fp_client_2': FivePaisaClient(fp_creds_2['username'], dict_flags['5p_pass_2'], fp_creds_2['pin'], fp_creds_2)})
     client_1, client_2 = work_info_dict['fp_client_1'], work_info_dict['fp_client_2']
     client_1.login()
     client_2.login()
+
+    if sch_04.get_job('fp_init'):
+        sch_04.remove_job('fp_init')
 
 
 @anvil.server.callable
