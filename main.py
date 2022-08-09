@@ -3,13 +3,17 @@ import ast
 import json
 from urllib import request
 from datetime import datetime
+import gspread
 import anvil.server
 from flask import Flask, request
 from apscheduler.schedulers.background import BackgroundScheduler as bkgSch
+from oauth2client.service_account import ServiceAccountCredentials
 
 # https://myappcoordinator.chinmaysjoshi.repl.co
 app = Flask('app')
 all_info_dict = {}
+work_info_dict = {}
+gs_dict = {}
 sch_01, sch_02, sch_03, sch_04, sch_05 = bkgSch(), bkgSch(), bkgSch(), bkgSch(), bkgSch()
 sch_01.start(), sch_02.start(), sch_03.start(), sch_04.start(), sch_05.start()
 
@@ -21,11 +25,11 @@ def hello_world():
 
 @app.route('/webhook', methods=['POST'])
 def webhook():
-    # Ref
+    # Ref Axiom
     #  {
     #     "action":"close",
-    #     "sender":"monitors"
-    #              "event": {
+    #     "sender":"monitors",
+    #     "event": {
     #         "id":"f11f8121-c949-4b59-84ba-40ef868f4d54",
     #         "name":"Queue backlogging",
     #         "title":"Current value is above threshold value 2500",
@@ -39,7 +43,13 @@ def webhook():
     #     },
     # }
     if request.method == 'POST':
-        print("Data received from Webhook is: ", request.json)
+        req_json = request.json
+        if 'event' in req_json and 'name' in req_json['event']:
+            if req_json['event']['name'][:6] == 'Memory':
+                work_info_dict['Heroku Secret Hamlet Memory Usage'] = req_json['event']['name']
+            elif req_json['event']['name'][:3] == 'Log':
+                work_info_dict['Heroku Secret Hamlet Log Size'] = req_json['event']['name']
+        print("Data received from Webhook is: ", req_json)
         return "Webhook received!"
 
 
@@ -48,6 +58,13 @@ def init():
     all_info_dict = ast.literal_eval(os.environ['all_info_dict'])
     print(all_info_dict)
     anvil.server.connect(all_info_dict['anvil_server_uplink_url'])
+    gs_dict.update({'gs_cred_1': ServiceAccountCredentials.from_json_keyfile_dict(ast.literal_eval(
+        all_info_dict['gs_cred_1']), ast.literal_eval(all_info_dict['gs_scope'])),
+        'gs_cred_2': ServiceAccountCredentials.from_json_keyfile_dict(ast.literal_eval(
+            all_info_dict['gs_cred_2']), ast.literal_eval(all_info_dict['gs_scope']))})
+    gs_dict.update({'gs_auth_cred_1': gspread.authorize(gs_dict['gs_cred_1']),
+                    'gs_auth_cred_2': gspread.authorize(gs_dict['gs_cred_2'])})
+    print(gs_dict)
 
 
 @anvil.server.callable
