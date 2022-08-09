@@ -76,16 +76,16 @@ def gs_init():
 
 def gs_handle_reads():
     # Init
-    debug_docs_range = 'Debug Doc!B3:C52'
-    scripts_btst_holdings_range = 'Debug Doc!K56'
-    scripts_btst_blacklist_range = 'Trader!Q1300:Q1400'
-    scripts_btst_blacklist_range_2 = 'Trader!Q1301:Q1400'
-    pfl_range = 'Trader!C1201:N1249'
-    scripts_info_df_range = 'Trader!C3:G50'
-    stocks_compare_tickers_range = 'Help Doc!H54:H103'
-    stocks_interested_tickers_range = 'STrig!C3:C260'
-    to_1cr_tickers_range = 'NSE YF SL!C7:C1500'
-    trading_holidays_range = 'NSE Holidays!C3:E200'
+    debug_docs_range = os.environ['debug_docs_range']
+    scripts_btst_holdings_range = os.environ['scripts_btst_holdings_range']
+    scripts_btst_blacklist_range = os.environ['scripts_btst_blacklist_range']
+    scripts_btst_blacklist_range_2 = os.environ['scripts_btst_blacklist_range_2']
+    pfl_range = os.environ['pfl_range']
+    scripts_info_df_range = os.environ['scripts_info_df_range']
+    stocks_compare_tickers_range = os.environ['stocks_compare_tickers_range']
+    stocks_interested_tickers_range = os.environ['stocks_interested_tickers_range']
+    to_1cr_tickers_range = os.environ['to_1cr_tickers_range']
+    trading_holidays_range = os.environ['trading_holidays_range']
 
     # Batch read
     ranges = [scripts_btst_holdings_range, pfl_range, scripts_info_df_range, stocks_compare_tickers_range,
@@ -93,6 +93,7 @@ def gs_handle_reads():
     gs_data = gs_dict['gs_auth_cred_2'].open_by_key(gs_dict['base_spreadsheet']).values_batch_get(ranges)
 
     work_info_dict['dict_flags'] = {x[0]: x[1] for x in gs_data['valueRanges'][-1]['values']}
+    sch_02.add_job(fp_init, misfire_grace_time=120)
 
 
 def fp_init():
@@ -102,10 +103,14 @@ def fp_init():
     work_info_dict.update({'fp_client_1': FivePaisaClient(
         fp_creds_1['username'], dict_flags['5p_pass'], fp_creds_1['pin'], fp_creds_1),
         'fp_client_2': FivePaisaClient(fp_creds_2['username'], dict_flags['5p_pass_2'], fp_creds_2['pin'], fp_creds_2)})
+    client_1, client_2 = work_info_dict['fp_client_1'], work_info_dict['fp_client_2']
+    client_1.login()
+    client_2.login()
 
 
-def fp_handle_login():
-    ...
+@anvil.server.callable
+def fp_validate_login(opt=1):
+    return work_info_dict['fp_client_1'].jwt_validate() if opt == 1 else work_info_dict['fp_client_2'].jwt_validate()
 
 
 @anvil.server.callable
