@@ -158,7 +158,7 @@ def tt_init():
     #     all_info_dict["telethon_creds_1"]['telegram_api_hash'],
     #     loop=a_loop)
     work_info_dict['tt_client'].start()
-    send_to_slack('#imp_info', work_info_dict['tt_client'].get_dialogs())
+    # send_to_slack('#imp_info', work_info_dict['tt_client'].get_dialogs())
 
 
 @app.route('/ttsm')
@@ -184,6 +184,29 @@ def tt_send_message(entity=1610358948, message='Howdy', reply_to_msg_id=None):
 
     with Kernel() as kernel:
         kernel.run(send_message)
+
+
+@anvil.server.callable
+def tt_get_entity(entity):
+    async def get_entity():
+        nonlocal entity
+        client = work_info_dict['tt_client']
+        a_loop = work_info_dict['a_loop']
+        if a_loop.is_closed():
+            work_info_dict['a_loop'] = a_loop = asyncio.new_event_loop()
+        asyncio.set_event_loop(a_loop)
+        info = 'None'
+        try:
+            info = client.get_entity(entity)
+        except Exception as e1:
+            try:
+                info = await client.get_entity(entity)
+            except Exception as e2:
+                print(e1.with_traceback(None), e2.with_traceback(None))
+        return info
+
+    with Kernel() as kernel:
+        return kernel.run(get_entity)
 
 
 @anvil.server.callable
@@ -295,7 +318,7 @@ def misc_python_console(app_data_1=None):
             return msg_str
             run = False
         else:
-            inform(msg_str)
+            print(msg_str)
 
 
 sch_01.add_job(init, misfire_grace_time=120)
