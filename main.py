@@ -2,10 +2,13 @@ import os
 import ast
 import json
 import time
+import requests
 from urllib import request
 from datetime import datetime
+from dateutil.parser import parse
 import gspread
 import anvil.server
+import pandas as pd
 from py5paisa import FivePaisaClient
 from flask import Flask, request as flask_request
 from apscheduler.schedulers.background import BackgroundScheduler as bkgSch
@@ -16,6 +19,12 @@ app = Flask('app')
 all_info_dict = {}
 work_info_dict = {}
 gs_dict = {}
+header = {
+            "User-Agent": "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/50.0.2661.75 "
+                          "Safari/537.36",
+            "X-Requested-With": "XMLHttpRequest"
+        }
+dict_params, dict_params_2 = {'valueInputOption': 'RAW'}, {'valueInputOption': 'USER_ENTERED'}
 sch_01, sch_02, sch_03, sch_04, sch_05 = bkgSch(), bkgSch(), bkgSch(), bkgSch(), bkgSch()
 sch_01.start(), sch_02.start(), sch_03.start(), sch_04.start(), sch_05.start()
 
@@ -60,6 +69,7 @@ def init():
     all_info_dict = ast.literal_eval(os.environ['all_info_dict'])
     # print(all_info_dict)
     anvil.server.connect(all_info_dict['anvil_server_uplink_url'])
+    work_info_dict['misc_holiday_check'] = True
     sch_02.add_job(gs_init, misfire_grace_time=120)
 
 
@@ -74,6 +84,8 @@ def gs_init():
                     'rough_spreadsheet': all_info_dict['rough_spreadsheet']})
     sch_03.add_job(gs_handle_reads, 'interval', seconds=60, misfire_grace_time=40)
     sch_04.add_job(fp_init, 'interval', seconds=20, misfire_grace_time=120, id='fp_init')
+    the_date_time = datetime.now().replace(minute=0, second=0)
+    sch_05.add_job(misc_check_holiday, 'interval', minutes=10, misfire_grace_time=60, next_run_time=the_date_time)
 
 
 def gs_handle_reads():
@@ -95,6 +107,11 @@ def gs_handle_reads():
     gs_data = gs_dict['gs_auth_cred_2'].open_by_key(gs_dict['base_spreadsheet']).values_batch_get(ranges)
 
     work_info_dict['dict_flags'] = {x[0]: x[1] for x in gs_data['valueRanges'][-1]['values']}
+
+
+def gs_handle_write(sheet, range_str, values):
+    gs_dict['gs_auth_cred_2'].open_by_key(gs_dict[sheet]).values_update(range_str, params=dict_params,
+                                               body={'values': values})
 
 
 def fp_init():
@@ -142,6 +159,37 @@ def send_to_slack(channel, message, host='REPLIT'):
             print(the_time + ' : ' + prefix + 'FAIL ' + str(em))
         return False
     return True
+
+
+def misc_check_holiday():
+    dt_now = datetime.now()
+    if dt_now.replace(hour=8, minute=25) > dt_now >= dt_now.replace(hour=9, minute=0) and dt_now.isoweekday() < 6:
+        work_info_dict['misc_holiday_check'] = False
+        return 1
+    elif work_info_dict['misc_holiday_check']:
+        return 1
+
+    holiday = False
+    url = 'https://www.bankbazaar.com/indian-holiday/nse-holidays.html'
+    for i in range(10):
+        try:
+            res = requests.get(url, headers=header)
+            if res.status_code == 200:
+                holiday_df = pd.read_html(res.text)[1]
+                date_time = datetime.now()
+                for dt in holiday_df['Day'].values.tolist():
+                    dt_parsed = parse(dt)
+                    if date_time.date() == dt_parsed.date():
+                        holiday = True
+                        break
+        except:
+            ...
+
+    work_info_dict['misc_holiday_check'] = True
+    if holiday:
+        send_to_slack('#imp_info', 'Disabling Heroku as It is a holiday')
+        sch_02.add_job(gs_handle_write, args=['base_spreadsheet', all_info_dict['heroku_enable_disable_range'], [[1]]],
+                       misfire_grace_time=60)
 
 
 sch_01.add_job(init, misfire_grace_time=120)
