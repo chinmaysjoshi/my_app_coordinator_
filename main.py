@@ -41,29 +41,25 @@ def hello_world():
 @app.route('/webhook', methods=['POST'])
 def webhook():
     # Ref Axiom
-    #  {
-    #     "action":"close",
-    #     "sender":"monitors",
-    #     "event": {
-    #         "id":"f11f8121-c949-4b59-84ba-40ef868f4d54",
-    #         "name":"Queue backlogging",
-    #         "title":"Current value is above threshold value 2500",
-    #         "body":"Triggered with a value of 2782",
-    #         "value":"2782",
-    #         "timestamp":"2021-02-23T14:43:45.34205696Z",
-    #         "source":"monitors.qKKbK6n4xeokNBF9GC.COUNT",
-    #         "priority":0,
-    #         "snoozedUntil":"0001-01-01T00:00:00Z",
-    #         "state":3
-    #     },
-    # }
+    # Data received from Webhook is:
+    # {'action': 'Open', 'event': {'ID': '7zEhpLOHHRYqM9Njsb', 'value': 1, 'source': 'monitors.FnXaqlly50Yq9pqgNW',
+    #                              'body': 'Triggered with a value of 1', 'description': 'Memory usage 650 - 799 mb',
+    #                              'IsGroupedQuery': False,
+    #                              'title': 'Current value 1.000000 is Above Or Equal threshold value 0.5',
+    #                              'timestamp': '2022-08-10T04:29:15.034461185Z', 'MonitorID': 'FnXaqlly50Yq9pqgNW',
+    #                              'isOpened': True, 'externalIds': None}, 'sender': 'monitors'}
     if flask_request.method == 'POST':
         req_json = flask_request.json
-        if 'event' in req_json and 'name' in req_json['event']:
-            if req_json['event']['name'][:6] == 'Memory':
-                work_info_dict['Heroku Secret Hamlet Memory Usage'] = req_json['event']['name']
-            elif req_json['event']['name'][:3] == 'Log':
-                work_info_dict['Heroku Secret Hamlet Log Size'] = req_json['event']['name']
+        if 'event' in req_json and 'title' in req_json['event']:
+            if req_json['event']['description'].find('Memory') != -1:
+                if req_json['event']['title'].find('Above') != -1:
+                    work_info_dict['Heroku Secret Hamlet Memory Usage'] = req_json['event']['description']
+                    anvil.server.call('aw_send_receive_info', req_json['event']['description'])
+            elif req_json['event']['description'].find('Logs') != -1:
+                if req_json['event']['title'].find('Above') != -1:
+                    work_info_dict['Heroku Secret Hamlet Log Size'] = req_json['event']['description']
+                else:
+                    work_info_dict['Heroku Secret Hamlet Log Size'] = ''
         print("Data received from Webhook is: ", req_json)
         return "Webhook received!"
 
