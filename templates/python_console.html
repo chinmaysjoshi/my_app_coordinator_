@@ -7,7 +7,7 @@
         <br>
         <input type="text" name="Command"
                placeholder="work_info_dict['messages']"
-               value="{{ request.form['title'] }}"></input>
+               value="{{ request.form['command'] }}"></input>
         <br>
 
 <!--        <label for="content">Message Content</label>-->
@@ -22,12 +22,12 @@
     </form>
 {% endblock %}
 
-{% block content %}
-    <h1>{% block title %} Messages {% endblock %}</h1>
+{% block content_2 %}
+    <h1>{% block title_2 %} Messages {% endblock %}</h1>
     {% for message in messages %}
         <div class='message'>
-            <h3>{{ message['title'] }}</h3>
-            <p>{{ message['content'] }}</p>
+            <h3>{{ message['command'] }}</h3>
+            <p>{{ message['output'] }}</p>
         </div>
     {% endfor %}
 {% endblock %}
