@@ -14,7 +14,7 @@ from curio import Kernel
 from py5paisa import FivePaisaClient
 from telethon.sessions import StringSession
 from telethon.sync import TelegramClient, events
-from flask import Flask, request as flask_request
+from flask import Flask, request as flask_request, render_template
 from apscheduler.schedulers.background import BackgroundScheduler as bkgSch
 from oauth2client.service_account import ServiceAccountCredentials
 
@@ -48,6 +48,13 @@ def webhook():
     #                              'title': 'Current value 1.000000 is Above Or Equal threshold value 0.5',
     #                              'timestamp': '2022-08-10T04:29:15.034461185Z', 'MonitorID': 'FnXaqlly50Yq9pqgNW',
     #                              'isOpened': True, 'externalIds': None}, 'sender': 'monitors'}
+    # curl - X POST https://myappcoordinator.chinmaysjoshi.repl.co/webhook
+    # -H "Content-Type: application/json"
+    # -d "{\"action\": \"Open\", \"event\": {\"ID\": \"7zEhpLOHHRYqM9Njsb\", \"value\": 1, \"source\": " \
+    #    "\"monitors.FnXaqlly50Yq9pqgNW\", \"body\": \"Triggered with a value of 1\", \"description\": " \
+    #    "\"Memory usage 650 - 799 mb\", \"IsGroupedQuery\": false, \"title\": \"Current value 1.000000" \
+    #    " is Above Or Equal threshold value 0.5\", \"timestamp\": \"2022-08-10T04:29:15.034461185Z\", " \
+    #    "\"MonitorID\": \"FnXaqlly50Yq9pqgNW\", \"isOpened\": true, \"externalIds\": null}, \"sender\": \"monitors\"}"
     if flask_request.method == 'POST':
         req_json = flask_request.json
         if 'event' in req_json and 'title' in req_json['event']:
@@ -62,6 +69,19 @@ def webhook():
                     work_info_dict['Heroku Secret Hamlet Log Size'] = ''
         print("Data received from Webhook is: ", req_json)
         return "Webhook received!"
+
+
+@app.route('/python_console')
+def python_console():
+    if 'messages' not in work_info_dict:
+        work_info_dict['messages'] = [{'command': 'NA', 'content': 'NA'}]
+
+    if flask_request.method == 'POST':
+        command = flask_request.form['command']
+        output = misc_python_console(command)
+        work_info_dict['messages'].append({'command': command, 'content': output})
+
+    return render_template('python_console.html', messages=work_info_dict['messages'][::-1])
 
 
 def init():
@@ -155,6 +175,11 @@ def tt_init():
     #     loop=a_loop)
     work_info_dict['tt_client'].start()
     # send_to_slack('#imp_info', work_info_dict['tt_client'].get_dialogs())
+
+
+def tt_process_ids():
+    dialogs = work_info_dict['tt_client'].get_dialogs()
+    work_info_dict['tt_name_entity_dict'] = {x.name: x.entity.id for x in dialogs}
 
 
 @app.route('/ttsm')
@@ -266,9 +291,9 @@ def misc_python_console(app_data_1=None):
     dt_now = datetime.now()
     run = True
     while run:
+        msg_str = ''
         try:
             app_data = input('Please input the command to run : \n') if app_data_1 is None else app_data_1
-            msg_str = ''
             if app_data == 'exit':
                 run = False
                 continue
@@ -311,8 +336,8 @@ def misc_python_console(app_data_1=None):
         except Exception as e:
             msg_str += f'{dt_now} : {e.with_traceback(None)}\n'
         if app_data_1:
-            return msg_str
             run = False
+            return msg_str
         else:
             print(msg_str)
 
