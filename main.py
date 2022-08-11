@@ -175,11 +175,70 @@ def tt_init():
     #     loop=a_loop)
     work_info_dict['tt_client'].start()
     # send_to_slack('#imp_info', work_info_dict['tt_client'].get_dialogs())
+    sch_03.add_job(tt_process_ids, misfire_grace_time=60)
 
 
 def tt_process_ids():
-    dialogs = work_info_dict['tt_client'].get_dialogs()
-    work_info_dict['tt_name_entity_dict'] = {x.name: x.entity.id for x in dialogs}
+    async def process_ids():
+        a_loop = work_info_dict['a_loop']
+        if a_loop.is_closed():
+            work_info_dict['a_loop'] = a_loop = asyncio.new_event_loop()
+        asyncio.set_event_loop(a_loop)
+        dialogs = {}
+        try:
+            dialogs = work_info_dict['tt_client'].get_dialogs()
+        except Exception as e1:
+            try:
+                dialogs = await work_info_dict['tt_client'].get_dialogs()
+            except Exception as e2:
+                print(f'Get dialogs failed exceptions: \n{e1.with_traceback()} \n{e2.with_traceback()}')
+        return dialogs
+
+    with Kernel() as kernel:
+        work_info_dict['tt_name_entity_dict'] = {x.name: x.entity.id for x in kernel.run(process_ids)}
+
+
+def tt_run_function(attribute, *args, **kwargs):
+    async def run_function():
+        nonlocal attribute, args, kwargs
+        a_loop = work_info_dict['a_loop']
+        if a_loop.is_closed():
+            work_info_dict['a_loop'] = a_loop = asyncio.new_event_loop()
+        asyncio.set_event_loop(a_loop)
+        info = None
+        function = getattr(work_info_dict['tt_client'], attribute)
+        try:
+            info = function(*args, **kwargs)
+        except Exception as e1:
+            try:
+                info = await function(*args, **kwargs)
+            except Exception as e2:
+                print(f'Get dialogs failed exceptions: \n{e1.with_traceback()} \n{e2.with_traceback()}')
+        return info
+
+    with Kernel() as kernel:
+        return kernel.run(run_function)
+
+
+def tt_run_function_2(lambda_function):
+    async def run_function():
+        nonlocal lambda_function
+        a_loop = work_info_dict['a_loop']
+        if a_loop.is_closed():
+            work_info_dict['a_loop'] = a_loop = asyncio.new_event_loop()
+        asyncio.set_event_loop(a_loop)
+        info = None
+        try:
+            info = lambda_function()
+        except Exception as e1:
+            try:
+                info = await lambda_function()
+            except Exception as e2:
+                print(f'Get dialogs failed exceptions: \n{e1.with_traceback()} \n{e2.with_traceback()}')
+        return info
+
+    with Kernel() as kernel:
+        return kernel.run(run_function)
 
 
 @app.route('/ttsm')
@@ -283,6 +342,7 @@ def misc_check_holiday():
         send_to_slack('#imp_info', 'Disabling Heroku as It is a holiday')
         sch_02.add_job(gs_handle_write, args=['base_spreadsheet', all_info_dict['heroku_enable_disable_range'], [[1]]],
                        misfire_grace_time=60)
+        work_info_dict['holiday'] = dt_now
 
 
 @anvil.server.callable
