@@ -19,6 +19,8 @@ from apscheduler.schedulers.background import BackgroundScheduler as bkgSch
 from oauth2client.service_account import ServiceAccountCredentials
 
 # https://myappcoordinator.chinmaysjoshi.repl.co
+os.environ['TZ'] = 'Asia/Kolkata'
+time.tzset()
 app = Flask('app')
 all_info_dict = {}
 work_info_dict = {}
@@ -93,6 +95,7 @@ def init():
     work_info_dict['a_loop'] = asyncio.new_event_loop()
     sch_02.add_job(gs_init, misfire_grace_time=120)
     sch_02.add_job(tt_init, misfire_grace_time=120)
+    sch_05.add_job(heroku_keep_on, 'interval', minutes=10, misfire_grace_time=120)
 
 
 def gs_init():
@@ -122,18 +125,27 @@ def gs_handle_reads():
     stocks_interested_tickers_range = all_info_dict['stocks_interested_tickers_range']
     to_1cr_tickers_range = all_info_dict['to_1cr_tickers_range']
     trading_holidays_range = all_info_dict['trading_holidays_range']
+    heroku_disable_enable_range = all_info_dict['heroku_disable_enable_range']
 
     # Batch read
     ranges = [scripts_btst_holdings_range, pfl_range, scripts_info_df_range, stocks_compare_tickers_range,
-              stocks_interested_tickers_range, scripts_btst_blacklist_range, debug_docs_range]
+              stocks_interested_tickers_range, scripts_btst_blacklist_range, debug_docs_range,
+              heroku_disable_enable_range]
     gs_data = gs_dict['gs_auth_cred_2'].open_by_key(gs_dict['base_spreadsheet']).values_batch_get(ranges)
 
-    work_info_dict['dict_flags'] = {x[0]: x[1] for x in gs_data['valueRanges'][-1]['values']}
+    work_info_dict['dict_flags'] = {x[0]: x[1] for x in gs_data['valueRanges'][-2]['values']}
+    work_info_dict['heroku_disable_enable'] = bool(int(gs_data['valueRanges'][-1]['values'][0][0]))
 
 
 def gs_handle_write(sheet, range_str, values):
     gs_dict['gs_auth_cred_2'].open_by_key(gs_dict[sheet]).values_update(range_str, params=dict_params,
                                                body={'values': values})
+
+
+def heroku_keep_on():
+    dt_now = datetime.now()
+    if not work_info_dict['heroku_disable_enable'] and dt_now.isoweekday() == 5 and 15 <= dt_now.hour < 23:
+        requests.get(os.environ['heroku_url'])
 
 
 def fp_init():
