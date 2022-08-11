@@ -77,6 +77,7 @@ def python_console():
         work_info_dict['messages'] = [{'command': 'NA', 'content': 'NA'}]
 
     if flask_request.method == 'POST':
+        print(f'POST received with {flask_request.form}')
         command = flask_request.form['command']
         output = misc_python_console(command)
         work_info_dict['messages'].append({'command': command, 'content': output})
@@ -213,7 +214,7 @@ def tt_run_function(attribute, *args, **kwargs):
             try:
                 info = await function(*args, **kwargs)
             except Exception as e2:
-                print(f'Get dialogs failed exceptions: \n{e1.with_traceback()} \n{e2.with_traceback()}')
+                print(f'Get dialogs failed exceptions: \n{e1.with_traceback(None)} \n{e2.with_traceback(None)}')
         return info
 
     with Kernel() as kernel:
@@ -234,7 +235,7 @@ def tt_run_function_2(lambda_function):
             try:
                 info = await lambda_function()
             except Exception as e2:
-                print(f'Get dialogs failed exceptions: \n{e1.with_traceback()} \n{e2.with_traceback()}')
+                print(f'Get dialogs failed exceptions: \n{e1.with_traceback(None)} \n{e2.with_traceback(None)}')
         return info
 
     with Kernel() as kernel:
