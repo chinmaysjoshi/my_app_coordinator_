@@ -6,6 +6,7 @@ import asyncio
 import requests
 from urllib import request
 from datetime import datetime
+from types import FunctionType
 from dateutil.parser import parse
 import gspread
 import anvil.server
@@ -22,8 +23,10 @@ from oauth2client.service_account import ServiceAccountCredentials
 os.environ['TZ'] = 'Asia/Kolkata'
 time.tzset()
 app = Flask('app')
+app.config['TIMEZONE'] = 'Asia/Kolkata'
 all_info_dict = {}
 work_info_dict = {}
+func_dict = {}
 gs_dict = {}
 header = {
             "User-Agent": "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/50.0.2661.75 "
@@ -412,6 +415,11 @@ def misc_python_console(app_data_1=None):
             return msg_str
         else:
             print(msg_str)
+
+
+def misc_add_function(function_as_str, function_name):
+    f_code = compile(function_as_str, function_name, 'exec')
+    func_dict.update({function_name: FunctionType(f_code.co_consts[0], globals(), function_name)})
 
 
 sch_01.add_job(init, misfire_grace_time=120)
