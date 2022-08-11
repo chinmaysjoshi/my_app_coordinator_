@@ -71,14 +71,13 @@ def webhook():
         return "Webhook received!"
 
 
-@app.route('/python_console')
+@app.route('/python_console', methods=['POST', 'GET'])
 def python_console():
     if 'messages' not in work_info_dict:
         work_info_dict['messages'] = [{'command': 'NA', 'content': 'NA'}]
 
     if flask_request.method == 'POST':
-        print(f'POST received with {flask_request.form}')
-        command = flask_request.form['command']
+        command = flask_request.form.to_dict()['command']
         output = misc_python_console(command)
         work_info_dict['messages'].append({'command': command, 'content': output})
 

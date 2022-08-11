@@ -5,7 +5,7 @@
     <form method="post">
         <label for="command">Title</label>
         <br>
-        <input type="text" name="Command"
+        <input type="text" name="command"
                placeholder="work_info_dict['messages']"
                value="{{ request.form['command'] }}"></input>
         <br>
@@ -20,14 +20,11 @@
 <!--        <br>-->
         <button type="submit">Submit</button>
     </form>
-{% endblock %}
-
-{% block content_2 %}
-    <h1>{% block title_2 %} Messages {% endblock %}</h1>
+    <h1>Messages}</h1>
     {% for message in messages %}
         <div class='message'>
             <h3>{{ message['command'] }}</h3>
-            <p>{{ message['output'] }}</p>
+            <p>{{ message['content'] }}</p>
         </div>
     {% endfor %}
 {% endblock %}
