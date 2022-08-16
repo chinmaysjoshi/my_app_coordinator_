@@ -1,13 +1,17 @@
+import io
 import os
 import ast
 import json
+import math
 import time
 import asyncio
 import requests
+import traceback
 from urllib import request
-from datetime import datetime
 from types import FunctionType
 from dateutil.parser import parse
+from datetime import datetime, timedelta
+import aiohttp
 import gspread
 import anvil.server
 import pandas as pd
@@ -96,6 +100,7 @@ def init():
     # print(all_info_dict)
     anvil.server.connect(all_info_dict['anvil_server_uplink_url'])
     work_info_dict['misc_holiday_check'] = True
+    work_info_dict['misc_holiday_check_2'] = True
     work_info_dict['a_loop'] = asyncio.new_event_loop()
     sch_02.add_job(gs_init, misfire_grace_time=120)
     sch_02.add_job(tt_init, misfire_grace_time=120)
@@ -115,6 +120,10 @@ def gs_init():
     sch_04.add_job(fp_init, 'interval', seconds=20, misfire_grace_time=120, id='fp_init')
     the_date_time = datetime.now().replace(minute=0, second=0)
     sch_05.add_job(misc_check_holiday, 'interval', minutes=10, misfire_grace_time=60, next_run_time=the_date_time)
+    sch_05.add_job(misc_check_holiday_2, 'interval', minutes=10, misfire_grace_time=60, next_run_time=the_date_time)
+    the_date_time = datetime.now().replace(hour=4, minute=0, second=0)
+    sch_05.add_job(misc_generate_stocks_report_yf_2, 'interval', hours=12, misfire_grace_time=60,
+                   next_run_time=the_date_time)
 
 
 def gs_handle_reads():
@@ -173,6 +182,145 @@ def fp_init():
 @anvil.server.callable
 def fp_validate_login(opt=1):
     return work_info_dict['fp_client_1'].jwt_validate() if opt == 1 else work_info_dict['fp_client_2'].jwt_validate()
+
+
+def fp_get_ticker_codes():
+    try:
+        df_5p = pd.read_csv('fp_scrip_code.csv')
+    except Exception:
+        url_5p_codes = 'https://images.5paisa.com/website/scripmaster-csv-format.csv'
+        df_5p = pd.DataFrame()
+        for j in range(20):
+            res = requests.get(url_5p_codes, headers=header)
+            if res.status_code == 200:
+                df_5p = pd.read_csv(io.BytesIO(res.content))
+                break
+    return df_5p
+
+
+def fp_get_historical_data(tickers, interval, period):
+    dt = datetime.now()
+    inform(f'Downloading Historical Data from FivePaisa {interval} {period} {dt}')
+    dt_start = (dt - timedelta(days=int(period[:-1]) * 7 / 5)).strftime('%Y-%m-%d')
+    dt_stop = dt.strftime('%Y-%m-%d')
+    client_1, client_2 = work_info_dict['fp_client_1'], work_info_dict['fp_client_2']
+    failed_downloads_dict = {}
+    # client = FivePaisaClient(email="shrinivas97@gmail.com", passwd="Purvi85+", dob="19560622")
+    # client.login()
+    # url_5p_codes = 'https://images.5paisa.com/website/scripmaster-csv-format.csv'
+    # df_5p = pd.DataFrame()
+    # for j in range(20):
+    #     res = requests.get(url_5p_codes, headers=self.header)
+    #     if res.status_code == 200:
+    #         df_5p = pd.read_csv(io.BytesIO(res.content))
+    #         break
+    # self.tickers = [x.split('.')[0] for x in self.tickers]
+    try:
+        df_5p = pd.read_csv('fp_scrip_code.csv')
+    except Exception:
+        url_5p_codes = 'https://images.5paisa.com/website/scripmaster-csv-format.csv'
+        df_5p = pd.DataFrame()
+        for j in range(20):
+            res = requests.get(url_5p_codes, headers=header)
+            if res.status_code == 200:
+                df_5p = pd.read_csv(io.BytesIO(res.content))
+                break
+
+    tickers = [x.split('.')[0] for x in tickers]
+    for ticker in tickers:
+        if ticker in failed_downloads_dict and failed_downloads_dict[ticker] > 2:
+            tickers.remove(ticker)
+    if len(tickers) < 1:
+        return pd.DataFrame()
+    for k, v in {'^NSEI': 'NIFTY', '^NSEBANK': 'BANKNIFTY'}.items():
+        if k in tickers:
+            tickers.remove(k)
+            tickers.append(v)
+    tickers_code = {v5p[3].strip(): v5p[2] for v5p in df_5p.values.tolist() if v5p[3].strip() in tickers and
+                    v5p[0] == 'N' and v5p[1] == 'C'}
+    data_list = []
+    # p_bar = tqdm(total=len(tickers), desc='Downloader')
+    failed_downloads = []
+
+    def down(t, interval_1):
+        nonlocal data_list
+        for i in range(10):
+            try:
+                if t.strip() not in tickers_code:
+                    failed_downloads.append(t)
+                    break
+                # df = util_download_5p_history(client, 'N', 'C', tickers_code[t], '1d', dt_start, dt_stop)
+                df = client_1.historical_data('N', 'C', tickers_code[t.strip()], interval_1, dt_start, dt_stop)
+                if df is None:
+                    df = client_2.historical_data('N', 'C', tickers_code[t.strip()], interval_1, dt_start, dt_stop)
+                if type(df) is str or df is None:
+                    continue
+                if interval_1 == '1d':
+                    df.set_index('Datetime', inplace=True)
+                    df['Close2'] = df['Close']
+                    df.columns = pd.MultiIndex.from_tuples([(t, x) for x in ['Open', 'High', 'Low', 'Close',
+                                                                             'Volume', 'Close2']])
+                    df.index = [datetime.strptime(dti.split('T')[0], '%Y-%m-%d') for dti in df.index]
+                elif interval_1[-1:] == 'm':
+                    df['Close2'] = df['Close']
+                    try:
+                        df['pyDatetime'] = [datetime.strptime(dti.split('.')[0], '%Y-%m-%dT%H:%M:%S') for
+                                            dti in df['Datetime']]
+                    except:
+                        print(df['Datetime'])
+                        df['pyDatetime'] = [datetime.strptime(dti, '%Y-%m-%dT%H:%M:%S.%f') for dti in df['Datetime']]
+                    # df['Datetime'] = [datetime.strptime(dti, '%Y-%m-%dT%H:%M:%S') for dti in df['Datetime']]
+                    df = df.set_index('Datetime')
+                    df.columns = pd.MultiIndex.from_tuples([(t, x) for x in ['Open', 'High', 'Low', 'Close',
+                                                                             'Volume', 'Close2', 'pyDatetime']])
+                data_list.append(df)
+                # p_bar.update(1)
+                break
+            except Exception as exc:
+                str_exc = f'fp_get_historical_data down {exc} trace {traceback.print_exc()}'
+                if str_exc.find('Datetime') == -1 and str_exc.find('columns') == -1 and \
+                        str_exc.find('KeyError') == -1 and str_exc.find(t) == -1:
+                    print(str_exc)
+                if i == 9:
+                    failed_downloads.append(t)
+
+    for ticker in tickers:
+        sch_05.add_job(down, args=[ticker, interval], misfire_grace_time=1200, max_instances=40)
+        time.sleep(0.08)
+
+    p_bar_n_list = []
+    while (data_list_len := len(data_list)) < len(tickers) - len(failed_downloads):
+        time.sleep(0.5)
+        p_bar_n_list.append(data_list_len)
+        if len(p_bar_n_list) > 120 and p_bar_n_list[-120] == p_bar_n_list[-1]:
+            break
+
+    # p_bar.close()
+    # for failed_download in failed_downloads:
+    #     if failed_download in self.scripts_btst_dict['failed_downloads_dict'][interval]:
+    #         self.scripts_btst_dict['failed_downloads_dict'][interval][failed_download] += 1
+    #     else:
+    #         self.scripts_btst_dict['failed_downloads_dict'][interval][failed_download] = 1
+    if not data_list:
+        print(failed_downloads)
+        return pd.DataFrame()
+    final_data = pd.concat(data_list, axis=1)
+    print('\n', failed_downloads, '\n', len(final_data.columns) / 6)
+    data_list = []
+    # re_down = []
+
+    # for ticker in tickers:
+    #     if ticker in failed_downloads or len(final_data[ticker].dropna()) < len(final_data):
+    #         re_down.append(ticker)
+    # yf_data = yf.download('.NS '.join(re_down) + '.NS', period='320d', group_by='ticker')
+    # yf_data.columns = pd.MultiIndex.from_tuples([(x[0].split('.')[0], x[1]) for x in yf_data.columns])
+    # yf_data.to_pickle('1cr_TO_5p_data_3_1.pkl')
+    # final_data.update(yf_data)
+    for obj_to_del in [p_bar_n_list, df_5p, tickers_code]:
+        del obj_to_del
+    inform(f'Finished downloading Historical Data from FivePaisa {interval} {period} {dt} {len(final_data)}'
+           f' {len(final_data.columns) / 6}')
+    return final_data
 
 
 def tt_init():
@@ -470,6 +618,272 @@ def misc_python_console(app_data_1=None):
             return msg_str
         else:
             print(msg_str)
+
+
+def misc_generate_stocks_report_yf_2():
+    inform('Entered!')
+    t1 = time.time()
+    base_url = 'https://finance.yahoo.com/quote/'
+    # https://in.finance.yahoo.com/quote/GPPL.NS/key-statistics?p=GPPL.NS
+    # tickers = [x[0] for x in gs_cred.open_by_key(base_spreadsheet).values_batch_get('NSE!U4:U3000')['valueRanges']
+    # [0]['values'][:200]]
+    fp_df = fp_get_ticker_codes()
+    tickers = [v5p[3].strip() for v5p in fp_df.values.tolist() if v5p[0] == 'N' and v5p[1] == 'C'
+            and v5p[4] in ['BE', 'BZ', 'E1', 'EQ', 'IV', 'IT']]
+    # self.gs_cred.open_by_key(self.base_spreadsheet).values_clear('NSE!AA2:CH3000')
+    # cols = ['Script', 'Market cap (intra-day) 5', 'Enterprise value 3', 'Trailing P/E', 'Forward P/E 1',
+    #         'PEG Ratio (5 yr expected) 1', 'Price/sales (ttm)', 'Price/book (mrq)', 'Enterprise value/revenue 3',
+    #         'Enterprise value/EBITDA 6', 'Beta (5Y monthly)', '52-week change 3', 'S&P500 52-week change 3',
+    #         '52-week high 3', '52-week low 3', '50-day moving average 3', '200-day moving average 3',
+    #         'Avg vol (3-month) 3', 'Avg vol (10-day) 3', 'Shares outstanding 5', 'Float', '% held by insiders 1',
+    #         '% held by institutions 1', 'Shares short 4', 'Short ratio 4', 'Short % of float 4',
+    #         'Short % of shares outstanding 4', 'Shares short (prior month ) 4', 'Forward annual dividend rate 4',
+    #         'Forward annual dividend yield 4', 'Trailing annual dividend rate 3',
+    #         'Trailing annual dividend yield 3',
+    #         '5-year average dividend yield 4', 'Payout ratio 4', 'Dividend date 3', 'Ex-dividend date 4',
+    #         'Last split factor 2', 'Last split date 3', 'Fiscal year ends', 'Most-recent quarter (mrq)',
+    #         'Profit margin', 'Operating margin (ttm)', 'Return on assets (ttm)', 'Return on equity (ttm)',
+    #         'Revenue (ttm)', 'Revenue per share (ttm)', 'Quarterly revenue growth (yoy)', 'Gross profit (ttm)',
+    #         'EBITDA', 'Net income avi to common (ttm)', 'Diluted EPS (ttm)', 'Quarterly earnings growth (yoy)',
+    #         'Total cash (mrq)', 'Total cash per share (mrq)', 'Total debt (mrq)', 'Total debt/equity (mrq)',
+    #         'Current ratio (mrq)', 'Book value per share (mrq)', 'Operating cash flow (ttm)',
+    #         'Levered free cash flow (ttm)']
+    # cols_1 = ['Script', 'Market Cap (intraday)', 'Enterprise Value', 'Trailing P/E',
+    #    'Forward P/E', 'PEG Ratio (5 yr expected)', 'Price/Sales (ttm)',
+    #    'Price/Book (mrq)', 'Enterprise Value/Revenue',
+    #    'Enterprise Value/EBITDA', 'Beta (5Y Monthly)', '52-Week Change 3',
+    #    'S&P500 52-Week Change 3', '52 Week High 3', '52 Week Low 3',
+    #    '50-Day Moving Average 3', '200-Day Moving Average 3',
+    #    'Avg Vol (3 month) 3', 'Avg Vol (10 day) 3', 'Shares Outstanding 5',
+    #    'Implied Shares Outstanding 6', 'Float 8', '% Held by Insiders 1',
+    #    '% Held by Institutions 1', 'Shares Short 4', 'Short Ratio 4',
+    #    'Short % of Float 4', 'Short % of Shares Outstanding 4',
+    #    'Shares Short (prior month ) 4', 'Forward Annual Dividend Rate 4',
+    #    'Forward Annual Dividend Yield 4', 'Trailing Annual Dividend Rate 3',
+    #    'Trailing Annual Dividend Yield 3', '5 Year Average Dividend Yield 4',
+    #    'Payout Ratio 4', 'Dividend Date 3', 'Ex-Dividend Date 4',
+    #    'Last Split Factor 2', 'Last Split Date 3', 'Fiscal Year Ends',
+    #    'Most Recent Quarter (mrq)', 'Profit Margin', 'Operating Margin (ttm)',
+    #    'Return on Assets (ttm)', 'Return on Equity (ttm)', 'Revenue (ttm)',
+    #    'Revenue Per Share (ttm)', 'Quarterly Revenue Growth (yoy)',
+    #    'Gross Profit (ttm)', 'EBITDA', 'Net Income Avi to Common (ttm)',
+    #    'Diluted EPS (ttm)', 'Quarterly Earnings Growth (yoy)',
+    #    'Total Cash (mrq)', 'Total Cash Per Share (mrq)', 'Total Debt (mrq)',
+    #    'Total Debt/Equity (mrq)', 'Current Ratio (mrq)',
+    #    'Book Value Per Share (mrq)', 'Operating Cash Flow (ttm)',
+    #    'Levered Free Cash Flow (ttm)']
+    final_df = pd.DataFrame(columns=['Script', '3M AVG', 'CtoC'])
+    df_array = []
+    scripts_info = []
+    jobs_running = 0
+    job_completed_count = 0
+    row_write_no = 3
+
+    def update_gsheet(opt=0, to_write='data'):
+        nonlocal final_df, scripts_info, df_array, row_write_no
+        grange = f'NSE YF Temp!C{row_write_no}' if opt == 1 else 'NSE YF!T4'
+        if to_write == 'data':
+            try:
+                temp_df = pd.concat([pd.DataFrame(columns=['Script', '3M AVG', 'CtoC']), pd.concat(df_array)])
+            except Exception as exc:
+                inform(f'Exception in update gsheet : {exc.with_traceback(None)}')
+                return 1
+            temp_df.sort_values('Script', inplace=True)
+            write_dict = dict(zip(['values'], [temp_df.fillna("-").values.tolist()]))
+            gs_dict['gs_auth_cred_2'].open_by_key(gs_dict['rough_spreadsheet']).values_update(
+                grange, params=dict_params, body=write_dict)
+            write_dict_len = len(write_dict['values'])
+            # final_df = final_df.drop(final_df.index[list(range(write_dict_len))])
+            del df_array[:len(temp_df)]
+            # final_df.to_pickle('scripts_statistics.pkl')
+            # inform(f'Wrote to gsheet! : final_df {len(final_df)} : write_dict {write_dict_len} : '
+            #        f'total scripts {len(scripts_info)}')
+            inform(f'Wrote to gsheet! : df_array {len(df_array)} : write_dict {write_dict_len} : '
+                   f'total scripts {len(scripts_info)}')
+            row_write_no += write_dict_len
+        elif to_write == 'column':
+            write_dict = {'values': [final_df.columns.values.tolist()]}
+            gs_dict['gs_auth_cred_2'].open_by_key(gs_dict['rough_spreadsheet']).values_update(
+                'NSE YF Temp!C2', params=dict_params, body=write_dict)
+            inform('Wrote to gsheet! : columns')
+
+    async def get_data(work_queue):
+        nonlocal final_df, jobs_running, scripts_info, df_array, job_completed_count
+        async with aiohttp.ClientSession() as session:
+            while not work_queue.empty():
+                t = await work_queue.get()
+                if t.find(' ') != -1:
+                    return 1
+                u = base_url + t + '.NS/key-statistics?'
+                for tries in range(10):
+                    async with session.get(u) as res:
+                        try:
+                            dfs = pd.read_html(await res.text())
+                            temp_df = pd.DataFrame(dfs[0].iloc[:, :2].values, columns=range(2))
+                            res_df = pd.concat([pd.DataFrame([['Script', t]]), temp_df, pd.concat(dfs[1:])])
+                            # final_df = final_df.append(pd.DataFrame([res_df.iloc[:, 1].values.tolist()],
+                            #                                         columns=res_df.iloc[:, 0].values.tolist()))
+                            res_df_2 = pd.DataFrame([res_df.iloc[:, 1].values.tolist()],
+                                                    columns=res_df.iloc[:, 0].values.tolist())
+                            df_array.append(res_df_2)
+                            scripts_info.append([t, res_df_2.iloc[-1]['Avg Vol (3 month) 3'], 0])
+                            jobs_running -= 1
+                            del dfs
+                            del temp_df
+                            del res_df
+                            del res_df_2
+                            job_completed_count += 1
+                            if job_completed_count % 20 == 0:
+                                sch_05.add_job(update_gsheet, misfire_grace_time=30)
+                            if job_completed_count % 200 == 0:
+                                sch_05.add_job(update_gsheet, args=[1, 'column'], misfire_grace_time=30)
+                            break
+                        except Exception as exc:
+                            # print(t, u, exc.with_traceback(None))
+                            if tries == 9:
+                                print(f'Get data failed for {t} {u} {exc.with_traceback(None)}')
+                                jobs_running -= 1
+                            await asyncio.sleep(5)
+                            continue
+                        # the_cols = res_df[0].tolist()
+                        # del res_df[0]
+                        # res_df = res_df.transpose()
+                        # res_df.columns = the_cols
+
+    async def enqueue_work():
+        work_queue = asyncio.Queue()
+        for scrip in tickers:
+            await work_queue.put(scrip)
+
+        # with Timer(text="\nTotal elapsed time: {:.1f}"):
+        await asyncio.gather(
+            asyncio.create_task(get_data(work_queue)),
+            asyncio.create_task(get_data(work_queue)),
+            asyncio.create_task(get_data(work_queue)),
+            asyncio.create_task(get_data(work_queue)),
+            asyncio.create_task(get_data(work_queue)),
+        )
+
+    sch_05.add_job(update_gsheet, 'interval', seconds=60, id='update_gsheet', misfire_grace_time=40)
+    asyncio.run(enqueue_work())
+    tickers_len = len(tickers)
+    # for idx, ticker in enumerate(tickers):
+    #     if (idx % 20 == 0 and idx > 0) or idx == tickers_len - 1:
+    #         print(f'stocks_report_yf : get_data : {idx} : {tickers_len}')
+    #         if sch02.get_job('report_yf'):
+    #             sch02.remove_job('report_yf')
+    #         if idx == 200:
+    #             sch01.add_job(update_gsheet, args=[1, 'column'], misfire_grace_time=120)
+    #     url = base_url + ticker + '.NS/key-statistics?'
+    #     # for tries in range(10):
+    #     #     res = requests.get(url, headers=header)
+    #     #     if res.status_code == 200:
+    #     #         try:
+    #     #             dfs = pd.read_html(res.text)
+    #     #             temp_df = pd.DataFrame(dfs[0].iloc[:, :2].values, columns=range(2))
+    #     #             res_df = pd.concat([pd.DataFrame([['Script', ticker]]), temp_df, pd.concat(dfs[1:])])
+    #     #             # final_df = final_df.append(pd.DataFrame([res_df.iloc[:, 1].values.tolist()],
+    #     #             #                                         columns=res_df.iloc[:, 0].values.tolist()))
+    #     #             res_df_2 = pd.DataFrame([res_df.iloc[:, 1].values.tolist()],
+    #     #                                     columns=res_df.iloc[:, 0].values.tolist())
+    #     #             df_array.append(res_df_2)
+    #     #             scripts_info.append([ticker, res_df_2.iloc[-1]['Avg Vol (3 month) 3']])
+    #     #             break
+    #     #         except Exception as exc:
+    #     #             # print(t, u, exc.with_traceback(None))
+    #     #             if tries == 9:
+    #     #                 print(f'Get data failed for {ticker} {url} {exc.with_traceback(None)}')
+    #     sch03.add_job(get_data, args=[ticker, url], misfire_grace_time=60)
+    #     jobs_running += 1
+    #     while jobs_running >= 20:
+    #         time.sleep(5)
+    update_gsheet()
+    time.sleep(10)
+
+    while jobs_running > 0:
+        time.sleep(1)
+
+    t2 = time.time()
+    inform(f'Part 1 Complete! {t2 - t1:0.2f} secs')
+    # final_df.to_pickle('scripts_statistics.pkl')
+    sch_05.add_job(update_gsheet, args=[1, 'column'], misfire_grace_time=120)
+    # df = final_df[final_df['Script'] != '-']
+    # col_name = 'Avg Vol (3 month) 3'
+    # volumes = df[col_name].values
+    # df = pd.DataFrame(list(scripts_info.keys()), columns=['Script'])
+    # volumes = list(scripts_info.values())
+    df = pd.DataFrame(scripts_info, columns=['Script', '3M AVG', 'CtoC'])
+    df = df.set_index('Script')
+    # volumes = [x[1] for x in scripts_info]
+    # actual_volumes = []
+    for idx, v in enumerate(scripts_info):
+        if (idx % 50 == 0 and idx > 0) or idx == tickers_len - 1:
+            inform(f'parse volumes : {idx} : {tickers_len}')
+        if v[1] in ['-', '', ' '] or (type(v[1]) is float and math.isnan(v)):
+            # actual_volumes.append(0)
+            df.loc[v[0], '3M AVG'] = 0
+            continue
+        elif type(v[1]) is float or type(v[1]) is int:
+            # actual_volumes.append(int(v))
+            df.loc[v[0], '3M AVG'] = 0
+            continue
+        try:
+            vol_temp = float(v[1][:-1] if v[1][-1] == 'M' or v[1][-1] == 'k' else v)
+        except Exception as exc:
+            inform(f'parse volumes : {idx} : {v} : {type(v[1])} {exc}')
+            # actual_volumes.append(0)
+            df.loc[v[0], '3M AVG'] = 0
+            continue
+        multiplier = 1000000 if v[1][-1] == 'M' else 1000 if v[1][-1] == 'k' else 1
+        # actual_volumes.append(vol_temp * multiplier)
+        df.loc[v[0], '3M AVG'] = vol_temp * multiplier
+    # df.insert(1, '3M AVG', actual_volumes)
+    t3 = time.time()
+    inform(f'Part 2 Complete! {t3 - t2:0.2f} secs')
+    # df.to_clipboard()
+    # tickers = [x for x in df['Script'].values.tolist()]
+    tickers = [x[0] for x in scripts_info]
+    # circuit_to_circuit = []
+    sch_05.remove_job('update_gsheet')
+    # d1 = yf.download(' '.join(tickers), period='10d', interval='60m', group_by='ticker')
+    # d1 = self.fp_get_historical_data(tickers, period='10d', interval='60m')
+    counter_1 = 0
+    for i in range(0, len(df), 10):
+        if (i % 50 == 0 and i > 0) or i == tickers_len - 1:
+            inform(f'circuit to circuit : {i} : {tickers_len}')
+        try:
+            d1 = fp_get_historical_data(tickers[i:i+10], period='10d', interval='60m')
+        except:
+            d1 = []
+        for ticker in tickers[i:i+10]:
+            try:
+                data = d1[ticker]
+                counter_1 += 1
+            except:
+                # circuit_to_circuit.append(0)
+                # df.loc[v[0], 'CtoC'] = 0
+                if ticker == tickers[i]:
+                    print(tickers[i:i+10])
+                    print(d1.columns)
+                continue
+            df.loc[ticker, 'CtoC'] = 1 if len(data[data['High'] == data['Low']]) >= 10 or len(data) == 0 else 0
+        # print(circuit_to_circuit[-10:], counter_1)
+    # df.insert(2, 'CtoC', circuit_to_circuit)
+    # df.to_pickle('scripts_statistics.pkl')
+    # final_df = df
+    sch_05.add_job(update_gsheet, args=[1, 'column'], misfire_grace_time=120)
+    # df.sort_values('Script', inplace=True)
+    write_dict = dict(zip(['values'], [df.fillna("-").values.tolist()]))
+    gs_dict['gs_auth_cred_2'].open_by_key(gs_dict['rough_spreadsheet']).values_update('NSE YF!U4', params=dict_params,
+                                                                   body=write_dict)
+    # update_gsheet()
+    t4 = time.time()
+    inform(f'Part 3 Complete! {t4 - t3:0.2f} secs')
+    inform(f'Total time {t4 - t1:0.2f} secs')
+
+
+def inform(msg):
+    print(msg)
 
 
 def misc_add_function(function_as_str, function_name):
