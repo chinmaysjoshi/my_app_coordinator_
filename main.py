@@ -12,6 +12,7 @@ import gspread
 import anvil.server
 import pandas as pd
 from curio import Kernel
+from bs4 import BeautifulSoup
 from py5paisa import FivePaisaClient
 from telethon.sessions import StringSession
 from telethon.sync import TelegramClient, events
@@ -148,7 +149,7 @@ def gs_handle_write(sheet, range_str, values):
 def heroku_keep_on():
     dt_now = datetime.now()
     if not work_info_dict['heroku_disable_enable'] and dt_now.isoweekday() == 5 and 15 <= dt_now.hour < 23:
-        requests.get(os.environ['heroku_url'])
+        requests.get(all_info_dict['heroku_url'])
 
 
 def fp_init():
@@ -355,9 +356,63 @@ def misc_check_holiday():
     work_info_dict['misc_holiday_check'] = True
     if holiday:
         send_to_slack('#imp_info', 'Disabling Heroku as It is a holiday')
-        sch_02.add_job(gs_handle_write, args=['base_spreadsheet', all_info_dict['heroku_enable_disable_range'], [[1]]],
+        sch_02.add_job(gs_handle_write, args=['base_spreadsheet', all_info_dict['heroku_disable_enable_range'], [[1]]],
                        misfire_grace_time=60)
         work_info_dict['holiday'] = dt_now
+
+
+def misc_check_holiday_2():
+    dt_now = datetime.now()
+    if dt_now.replace(hour=8, minute=25) > dt_now >= dt_now.replace(hour=9, minute=0) and dt_now.isoweekday() < 6:
+        work_info_dict['misc_holiday_check_2'] = False
+        return 1
+    elif work_info_dict['misc_holiday_check_2']:
+        return 1
+
+    holiday_trading, holiday_settlement = False, False
+    info_key = ''
+    if 'check_holiday_2_dict' not in work_info_dict:
+        work_info_dict['check_holiday_2_dict'] = {}
+
+    url = 'https://zerodha.com/marketintel/holiday-calendar/'
+    for i in range(10):
+        try:
+            res = requests.get(url, headers=header)
+            if res.status_code == 200:
+                soup = BeautifulSoup(res.content, 'html.parser')
+                uls = soup.find_all('ul', {'class': 'nostyle-list'})
+                all_text = uls[0].text.replace('\t', '')
+                extracted_text = '\n'.join([x for x in all_text.splitlines() if x != ''])
+                for line in extracted_text.splitlines():
+                    if line[:3] in ['Mon', 'Tue', 'Wed', 'Thu', 'Fri']:
+                        info_key = line[5:]
+                        date_time = datetime.strptime(' '.join(info_key.split()), '%d %b %Y')
+                        work_info_dict['check_holiday_2_dict'][info_key] = {
+                            'type': [], 'exchanges': [], 'date_time': date_time}
+                    elif line in ['trading', 'settlement']:
+                        work_info_dict['check_holiday_2_dict'][info_key]['type'].append(line)
+                    elif line in ['nse', 'bse', 'mcx']:
+                        work_info_dict['check_holiday_2_dict'][info_key]['exchanges'].append(line)
+                    else:
+                        work_info_dict['check_holiday_2_dict'][info_key]['info'] = line
+                    if datetime.strptime(' '.join(info_key.split()), '%d %b %Y').date() == dt_now.date():
+                        holiday_settlement = True
+                        if 'trading' in work_info_dict['check_holiday_2_dict'][info_key]['type']:
+                            holiday_trading = True
+                send_to_slack('#imp_info', str(work_info_dict['check_holiday_2_dict']))
+                break
+        except:
+            ...
+
+    work_info_dict['misc_holiday_check_2'] = True
+    if holiday_settlement:
+        if holiday_trading:
+            send_to_slack('#imp_info', 'Disabling Heroku as It is a holiday 2')
+            sch_02.add_job(gs_handle_write, misfire_grace_time=60,
+                           args=['base_spreadsheet', all_info_dict['heroku_disable_enable_range'], [[1]]])
+            work_info_dict['holiday_trading'] = dt_now
+            return 1
+        send_to_slack('#imp_info', 'Today is a settlement holiday')
 
 
 @anvil.server.callable
